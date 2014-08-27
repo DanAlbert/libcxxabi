@@ -24,6 +24,9 @@
 #include "../private_typeinfo.h"
 
 #if LIBCXXABI_ARM_EHABI
+extern "C"
+_Unwind_Reason_Code interpret_unwind_data(uint32_t, size_t*, size_t*);
+
 namespace {
 
 // Strange order: take words in order, but inside word, take from most to least
@@ -167,24 +170,13 @@ _Unwind_Reason_Code unwindOneFrame(
     struct _Unwind_Context* context) {
   // Read the compact model EHT entry's header # 6.3
   uint32_t* unwindingData = ucbp->pr_cache.ehtp;
-  uint32_t unwindInfo = *unwindingData;
-  assert((unwindInfo & 0xf0000000) == 0x80000000 && "Must be a compact entry");
   Descriptor::Format format =
-      static_cast<Descriptor::Format>((unwindInfo & 0x0f000000) >> 24);
+      static_cast<Descriptor::Format>((*unwindingData & 0x0f000000) >> 24);
   size_t len = 0;
-  size_t startOffset = 0;
-  switch (format) {
-    case Descriptor::SU16:
-      len = 4;
-      startOffset = 1;
-      break;
-    case Descriptor::LU16:
-    case Descriptor::LU32:
-      len = 4 + 4 * ((unwindInfo & 0x00ff0000) >> 16);
-      startOffset = 2;
-      break;
-    default:
-      return _URC_FAILURE;
+  size_t off = 0;
+  _Unwind_Reason_Code rv = interpret_unwind_data(*unwindingData, &off, &len);
+  if (rv != _URC_OK) {
+    return rv;
   }
 
   // Handle descriptors before unwinding so they are processed in the context
@@ -198,7 +190,7 @@ _Unwind_Reason_Code unwindOneFrame(
   if (result != _URC_CONTINUE_UNWIND)
     return result;
 
-  return _Unwind_VRS_Interpret(context, unwindingData, startOffset, len);
+  return _Unwind_VRS_Interpret(context, unwindingData, off, len);
 }
 
 // Generates mask discriminator for _Unwind_VRS_Pop, e.g. for _UVRSC_CORE /
@@ -214,6 +206,28 @@ uint32_t RegisterRange(uint8_t start, uint8_t count_minus_one) {
 }
 
 } // end anonymous namespace
+
+extern "C" _Unwind_Reason_Code
+interpret_unwind_data(uint32_t data, size_t* off, size_t* len) {
+  assert((data & 0xf0000000) == 0x80000000 && "Must be a compact entry");
+  Descriptor::Format format =
+      static_cast<Descriptor::Format>((data & 0x0f000000) >> 24);
+  switch (format) {
+    case Descriptor::SU16:
+      *len = 4;
+      *off = 1;
+      break;
+    case Descriptor::LU16:
+    case Descriptor::LU32:
+      *len = 4 + 4 * ((data & 0x00ff0000) >> 16);
+      *off = 2;
+      break;
+    default:
+      return _URC_FAILURE;
+  }
+
+  return _URC_OK;
+}
 
 _Unwind_Reason_Code _Unwind_VRS_Interpret(
     _Unwind_Context* context,

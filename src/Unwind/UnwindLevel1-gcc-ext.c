@@ -141,6 +141,28 @@ _Unwind_Backtrace(_Unwind_Trace_Fn callback, void *ref) {
                                  result);
       return result;
     }
+
+#if LIBCXXABI_ARM_EHABI
+    _Unwind_Reason_Code interpret_unwind_data(uint32_t, size_t*, size_t*);
+    // Get the information for this frame.
+    unw_proc_info_t frameInfo;
+    if (unw_get_proc_info(&cursor, &frameInfo) != UNW_ESUCCESS) {
+      return _URC_END_OF_STACK;
+    }
+
+    size_t off;
+    size_t len;
+    uint32_t* unwindInfo = (uint32_t *) frameInfo.unwind_info;
+    result = interpret_unwind_data(*unwindInfo, &off, &len);
+    if (result != _URC_OK) {
+      return result;
+    }
+
+    if (_Unwind_VRS_Interpret((struct _Unwind_Context *)(&cursor),
+                              unwindInfo, off, len) != _URC_CONTINUE_UNWIND) {
+      return _URC_END_OF_STACK;
+    }
+#endif // LIBCXXABI_ARM_EHABI
   }
 }
 
