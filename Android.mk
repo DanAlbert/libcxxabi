@@ -56,6 +56,8 @@ LIBCXXABI_CPPFLAGS := \
 	-Iexternal/libcxx/include/ \
 	-std=c++11 \
 	-fexceptions \
+	-O0 -g \
+	-UNDEBUG \
 
 include $(CLEAR_VARS)
 LOCAL_MODULE := libc++abi
